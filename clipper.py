@@ -63,7 +63,10 @@ def download_audio_via_cobalt(youtube_url, output_path="outputs/temp_audio.mp3")
         "--extractor-args", "youtube:player_client=android",
         "-o", output_path, "--force-overwrites", clean_url,
     ]
-    subprocess.run(cmd, check=True)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        # Lempar error yang isinya pesan asli dari yt-dlp, bukan cuma exit status
+        raise RuntimeError(f"yt-dlp gagal: {result.stderr.strip()}")
     return output_path
 
 
