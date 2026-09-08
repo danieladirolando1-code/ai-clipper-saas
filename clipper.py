@@ -8,29 +8,32 @@ from youtube_transcript_api import YouTubeTranscriptApi
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def extract_video_id(url):
+    """Mengambil Video ID 11 karakter dari URL YouTube"""
     match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", url)
     if match:
         return match.group(1)
     return url
 
 def get_transcript_via_api(video_id):
+    """Mengambil transkrip tanpa instansiasi objek berlebih"""
     try:
-        ytt_api = YouTubeTranscriptApi()
-        fetched_transcript = ytt_api.fetch(video_id, languages=['id', 'en'])
+        # Panggil langsung secara statis
+        transcript_data = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en'])
         formatted_transcript = ""
-        for item in fetched_transcript.snippet:
+        for item in transcript_data:
             start = item['start']
             duration = item['duration']
             text = item['text']
             formatted_transcript += f"[{start:.1f}s - {start + duration:.1f}s] {text}\n"
         return formatted_transcript
-    except Exception:
+    except Exception as e:
+        # Jika bahasa id/en tidak ada, ambil bahasa default apapun yang tersedia
         try:
             transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
             transcript = transcript_list.find_transcript(['id', 'en'])
             data = transcript.fetch()
             return "".join([f"[{item['start']:.1f}s] {item['text']}\n" for item in data])
-        except Exception as e:
+        except Exception as err:
             raise Exception(f"Gagal mengambil transkrip YouTube: {str(e)}")
 
 def get_viral_timestamps(transcript_text):
