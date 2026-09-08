@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -5,6 +6,9 @@ from pydantic import BaseModel
 from clipper import process_video_pipeline
 
 app = FastAPI()
+
+# Mencegah eror: Buat folder 'outputs' otomatis jika belum ada di server
+os.makedirs("outputs", exist_ok=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,6 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount folder outputs setelah dipastikan folder tersebut ada
 app.mount("/download", StaticFiles(directory="outputs"), name="download")
 
 class VideoRequest(BaseModel):
