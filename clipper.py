@@ -7,14 +7,14 @@ import openai
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def clean_youtube_url(url):
-    """Membersihkan parameter ekstra dari URL YouTube"""
+    """Membersihkan URL YouTube dari parameter tracking"""
     match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", url)
     if match:
         return f"https://www.youtube.com/watch?v={match.group(1)}"
     return url
 
 def download_youtube_audio(youtube_url, output_path="outputs/temp_audio.mp3"):
-    """Mengunduh audio dari YouTube dengan opsi anti-bot"""
+    """Mengunduh audio menggunakan menyamaran YouTube Android Client (Bypass Datacenter Block)"""
     os.makedirs("outputs", exist_ok=True)
     clean_url = clean_youtube_url(youtube_url)
     
@@ -23,8 +23,8 @@ def download_youtube_audio(youtube_url, output_path="outputs/temp_audio.mp3"):
         "-f", "ba/b",
         "-x",
         "--audio-format", "mp3",
+        "--extractor-args", "youtube:player_client=android,web",
         "--no-playlist",
-        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "-o", output_path,
         "--force-overwrites",
         clean_url
@@ -33,6 +33,7 @@ def download_youtube_audio(youtube_url, output_path="outputs/temp_audio.mp3"):
     return output_path
 
 def transcribe_audio_whisper_api(audio_path):
+    """Transkripsi cepat menggunakan OpenAI Whisper API"""
     with open(audio_path, "rb") as audio_file:
         transcript = client.audio.transcriptions.create(
             model="whisper-1",
@@ -43,6 +44,7 @@ def transcribe_audio_whisper_api(audio_path):
     return transcript.segments
 
 def get_viral_timestamps(transcript_text):
+    """Analisis timestamp terbaik dengan GPT-4o-mini"""
     prompt = f"""
     Berikut adalah transkrip video beserta timestamp:
     {transcript_text}
@@ -61,12 +63,13 @@ def get_viral_timestamps(transcript_text):
     return json.loads(response.choices[0].message.content)
 
 def crop_video_to_vertical(youtube_url, start_time, duration, output_filename):
+    """Memotong video dan mengubah rasio menjadi 9:16"""
     clean_url = clean_youtube_url(youtube_url)
     cmd_url = [
         "yt-dlp",
         "-g",
         "-f", "b/bestvideo+bestaudio",
-        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "--extractor-args", "youtube:player_client=android,web",
         clean_url
     ]
     video_stream_url = subprocess.check_output(cmd_url).decode('utf-8').strip().split('\n')[0]
