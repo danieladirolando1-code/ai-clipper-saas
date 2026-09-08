@@ -2,8 +2,8 @@ import os
 import subprocess
 import json
 import re
+import requests
 import openai
-from youtube_transcript_api import YouTubeTranscriptApi
 
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -14,30 +14,53 @@ def extract_video_id(url):
         return match.group(1)
     return url
 
-def get_transcript_via_api(video_id):
-    """Mengambil transkrip menggunakan metode v0.6+ youtube-transcript-api"""
-    try:
-        # Inisialisasi API versi terbaru
-        ytt = YouTubeTranscriptApi()
-        fetch_data = ytt.fetch(video_id, languages=['id', 'en'])
-        
-        formatted_transcript = ""
-        for item in fetch_data.snippet:
-            start = item['start']
-            duration = item['duration']
-            text = item['text']
-            formatted_transcript += f"[{start:.1f}s - {start + duration:.1f}s] {text}\n"
-        return formatted_transcript
-    except Exception:
-        # Alternatif jika format fetch bawaan menggunakan list_transcripts
-        try:
-            ytt = YouTubeTranscriptApi()
-            transcript_list = ytt.list(video_id)
-            transcript = transcript_list.find_transcript(['id', 'en'])
-            data = transcript.fetch()
-            return "".join([f"[{item['start']:.1f}s] {item['text']}\n" for item in data])
-        except Exception as e:
-            raise Exception(f"Gagal mengambil transkrip YouTube: {str(e)}")
+def download_audio_via_cobalt(youtube_url, output_path="outputs/temp_audio.mp3"):
+    """Mengunduh audio menggunakan Cobalt API untuk menghindari blokir IP Datacenter Render"""
+    os.makedirs("outputs", exist_ok=True)
+    clean_url = f"https://www.youtube.com/watch?v={extract_video_id(youtube_url)}"
+    
+    # Request stream URL dari API publik Cobalt
+    api_url = "https://co.wuk.sh/api/json"
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "url": clean_url,
+        "isAudioOnly": True,
+        "aFormat": "mp3"
+    }
+    
+    response = requests.post(api_url, json=payload, headers=headers)
+    data = response.json()
+    
+    if "url" in data:
+        audio_stream_url = data["url"]
+        # Download file MP3 menggunakan requests
+        audio_data = requests.get(audio_stream_url).content
+        with open(output_path, "wb") as f:
+            f.write(audio_data)
+        return output_path
+    else:
+        # Fallback jika API Cobalt sibuk, pakai yt-dlp android player
+        cmd = [
+            "yt-dlp", "-f", "ba/b", "-x", "--audio-format", "mp3",
+            "--extractor-args", "youtube:player_client=android",
+            "-o", output_path, "--force-overwrites", clean_url
+        ]
+        subprocess.run(cmd, check=True)
+        return output_path
+
+def transcribe_audio_whisper_api(audio_path):
+    """Transkripsi audio dengan OpenAI Whisper API"""
+    with open(audio_path, "rb") as audio_file:
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            response_format="verbose_json",
+            timestamp_granularities=["segment"]
+        )
+    return transcript.segments
 
 def get_viral_timestamps(transcript_text):
     prompt = f"""
@@ -58,12 +81,13 @@ def get_viral_timestamps(transcript_text):
     return json.loads(response.choices[0].message.content)
 
 def crop_video_to_vertical(youtube_url, start_time, duration, output_filename):
+    clean_url = f"https://www.youtube.com/watch?v={extract_video_id(youtube_url)}"
     cmd_url = [
         "yt-dlp",
         "-g",
         "-f", "b/bestvideo+bestaudio",
         "--extractor-args", "youtube:player_client=ios",
-        youtube_url
+        clean_url
     ]
     video_stream_url = subprocess.check_output(cmd_url).decode('utf-8').strip().split('\n')[0]
 
@@ -78,10 +102,15 @@ def crop_video_to_vertical(youtube_url, start_time, duration, output_filename):
 
 def process_video_pipeline(youtube_url):
     os.makedirs("outputs", exist_ok=True)
-    video_id = extract_video_id(youtube_url)
-    clean_url = f"https://www.youtube.com/watch?v={video_id}"
     
-    transcript_text = get_transcript_via_api(video_id)
+    # 1. Download audio via API Bypasser
+    audio_file = download_audio_via_cobalt(youtube_url)
+    
+    # 2. Transkripsi audio via OpenAI Whisper
+    segments = transcribe_audio_whisper_api(audio_file)
+    transcript_text = "".join([f"[{seg['start']:.1f}s - {seg['end']:.1f}s] {seg['text']}\n" for seg in segments])
+    
+    # 3. AI memilih timestamp viral
     clips_data = get_viral_timestamps(transcript_text)
     
     if isinstance(clips_data, dict) and "clips" in clips_data:
@@ -89,11 +118,12 @@ def process_video_pipeline(youtube_url):
     elif isinstance(clips_data, dict):
         clips_data = list(clips_data.values())[0]
 
+    # 4. Potong klip vertikal
     processed_clips = []
     for idx, clip in enumerate(clips_data):
         start, end = clip["start"], clip["end"]
         out_name = f"outputs/clip_{idx+1}.mp4"
-        crop_video_to_vertical(clean_url, start, end - start, out_name)
+        crop_video_to_vertical(youtube_url, start, end - start, out_name)
         
         processed_clips.append({
             "title": clip.get("title", f"Klip {idx+1}"),
