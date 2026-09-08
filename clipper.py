@@ -15,25 +15,28 @@ def extract_video_id(url):
     return url
 
 def get_transcript_via_api(video_id):
-    """Mengambil transkrip tanpa instansiasi objek berlebih"""
+    """Mengambil transkrip menggunakan metode v0.6+ youtube-transcript-api"""
     try:
-        # Panggil langsung secara statis
-        transcript_data = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en'])
+        # Inisialisasi API versi terbaru
+        ytt = YouTubeTranscriptApi()
+        fetch_data = ytt.fetch(video_id, languages=['id', 'en'])
+        
         formatted_transcript = ""
-        for item in transcript_data:
+        for item in fetch_data.snippet:
             start = item['start']
             duration = item['duration']
             text = item['text']
             formatted_transcript += f"[{start:.1f}s - {start + duration:.1f}s] {text}\n"
         return formatted_transcript
-    except Exception as e:
-        # Jika bahasa id/en tidak ada, ambil bahasa default apapun yang tersedia
+    except Exception:
+        # Alternatif jika format fetch bawaan menggunakan list_transcripts
         try:
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            ytt = YouTubeTranscriptApi()
+            transcript_list = ytt.list(video_id)
             transcript = transcript_list.find_transcript(['id', 'en'])
             data = transcript.fetch()
             return "".join([f"[{item['start']:.1f}s] {item['text']}\n" for item in data])
-        except Exception as err:
+        except Exception as e:
             raise Exception(f"Gagal mengambil transkrip YouTube: {str(e)}")
 
 def get_viral_timestamps(transcript_text):
