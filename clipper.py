@@ -7,22 +7,24 @@ import openai
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def clean_youtube_url(url):
-    """Membersihkan parameter tracking (?si=...) agar tidak membingungkan yt-dlp"""
+    """Membersihkan parameter ekstra dari URL YouTube"""
     match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", url)
     if match:
         return f"https://www.youtube.com/watch?v={match.group(1)}"
     return url
 
 def download_youtube_audio(youtube_url, output_path="outputs/temp_audio.mp3"):
-    """Mengunduh audio MP3 dari YouTube"""
+    """Mengunduh audio dari YouTube dengan opsi anti-bot"""
     os.makedirs("outputs", exist_ok=True)
     clean_url = clean_youtube_url(youtube_url)
     
     cmd = [
         "yt-dlp",
+        "-f", "ba/b",
         "-x",
         "--audio-format", "mp3",
-        "--audio-quality", "5",
+        "--no-playlist",
+        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "-o", output_path,
         "--force-overwrites",
         clean_url
@@ -60,7 +62,13 @@ def get_viral_timestamps(transcript_text):
 
 def crop_video_to_vertical(youtube_url, start_time, duration, output_filename):
     clean_url = clean_youtube_url(youtube_url)
-    cmd_url = ["yt-dlp", "-g", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]", clean_url]
+    cmd_url = [
+        "yt-dlp",
+        "-g",
+        "-f", "b/bestvideo+bestaudio",
+        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        clean_url
+    ]
     video_stream_url = subprocess.check_output(cmd_url).decode('utf-8').strip().split('\n')[0]
 
     ffmpeg_cmd = [
