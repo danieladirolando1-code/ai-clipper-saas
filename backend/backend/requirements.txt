@@ -1,0 +1,1 @@
+fastapi⁠, ⁠uvicorn⁠, ⁠yt-dlp⁠, ⁠openai-whisper⁠, ⁠openai⁠, ⁠pydantic
