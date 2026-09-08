@@ -1,3 +1,5 @@
+const BACKEND_URL = "https://ai-clipper-backend-fix.onrender.com";
+
 async function processVideo() {
     const urlInput = document.getElementById('ytUrl').value;
     const btn = document.getElementById('generateBtn');
@@ -16,7 +18,7 @@ async function processVideo() {
     clipsGrid.innerHTML = '';
 
     try {
-        const response = await fetch('http://localhost:8000/api/generate-clips', {
+        const response = await fetch(`${BACKEND_URL}/api/generate-clips`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url: urlInput })
@@ -31,13 +33,13 @@ async function processVideo() {
                 card.innerHTML = `
                     <h3>${clip.title}</h3>
                     <p><strong>Alasan AI:</strong> ${clip.reason}</p>
-                    <a href="http://localhost:8000${clip.download_url}" download target="_blank">Download MP4 (9:16)</a>
+                    <a href="${BACKEND_URL}${clip.download_url}" download target="_blank" class="download-btn">Download MP4 (9:16)</a>
                 `;
                 clipsGrid.appendChild(card);
             });
             resultSection.classList.remove('hidden');
         } else {
-            alert('Gagal memproses video.');
+            alert('Gagal memproses video: ' + (data.detail || 'Terjadi kesalahan pada server.'));
         }
     } catch (err) {
         console.error(err);
