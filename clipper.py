@@ -8,29 +8,32 @@ from youtube_transcript_api import YouTubeTranscriptApi
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def extract_video_id(url):
-    """Mengambil Video ID 11 karakter dari URL YouTube"""
     match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", url)
     if match:
         return match.group(1)
     return url
 
 def get_transcript_via_api(video_id):
-    """Mengambil transkrip langsung via API (Anti-block IP Datacenter)"""
     try:
-        # Coba ambil transkrip Bahasa Indonesia atau Bahasa Inggris
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en'])
+        ytt_api = YouTubeTranscriptApi()
+        fetched_transcript = ytt_api.fetch(video_id, languages=['id', 'en'])
         formatted_transcript = ""
-        for item in transcript_list:
+        for item in fetched_transcript.snippet:
             start = item['start']
             duration = item['duration']
             text = item['text']
             formatted_transcript += f"[{start:.1f}s - {start + duration:.1f}s] {text}\n"
         return formatted_transcript
-    except Exception as e:
-        raise Exception(f"Gagal mengambil transkrip YouTube: {str(e)}")
+    except Exception:
+        try:
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            transcript = transcript_list.find_transcript(['id', 'en'])
+            data = transcript.fetch()
+            return "".join([f"[{item['start']:.1f}s] {item['text']}\n" for item in data])
+        except Exception as e:
+            raise Exception(f"Gagal mengambil transkrip YouTube: {str(e)}")
 
 def get_viral_timestamps(transcript_text):
-    """Meminta GPT-4o-mini menentukan klip viral"""
     prompt = f"""
     Berikut adalah transkrip video beserta timestamp:
     {transcript_text}
@@ -49,7 +52,6 @@ def get_viral_timestamps(transcript_text):
     return json.loads(response.choices[0].message.content)
 
 def crop_video_to_vertical(youtube_url, start_time, duration, output_filename):
-    """Memotong video menggunakan stream player iOS"""
     cmd_url = [
         "yt-dlp",
         "-g",
@@ -73,10 +75,7 @@ def process_video_pipeline(youtube_url):
     video_id = extract_video_id(youtube_url)
     clean_url = f"https://www.youtube.com/watch?v={video_id}"
     
-    # 1. Ambil transkrip langsung via API (tanpa download MP3)
     transcript_text = get_transcript_via_api(video_id)
-    
-    # 2. Minta AI cari timestamp
     clips_data = get_viral_timestamps(transcript_text)
     
     if isinstance(clips_data, dict) and "clips" in clips_data:
@@ -84,7 +83,6 @@ def process_video_pipeline(youtube_url):
     elif isinstance(clips_data, dict):
         clips_data = list(clips_data.values())[0]
 
-    # 3. Potong video langsung
     processed_clips = []
     for idx, clip in enumerate(clips_data):
         start, end = clip["start"], clip["end"]
