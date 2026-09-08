@@ -1,23 +1,36 @@
 import os
 import subprocess
 import json
+import re
 import openai
 
-# Ambil API Key dari Environment Variable
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+def clean_youtube_url(url):
+    """Membersihkan parameter tracking (?si=...) agar tidak membingungkan yt-dlp"""
+    match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", url)
+    if match:
+        return f"https://www.youtube.com/watch?v={match.group(1)}"
+    return url
+
 def download_youtube_audio(youtube_url, output_path="outputs/temp_audio.mp3"):
-    """Mengunduh audio MP3 ringan dari YouTube"""
+    """Mengunduh audio MP3 dari YouTube"""
     os.makedirs("outputs", exist_ok=True)
+    clean_url = clean_youtube_url(youtube_url)
+    
     cmd = [
-        "yt-dlp", "-x", "--audio-format", "mp3",
-        "-o", output_path, youtube_url, "--force-overwrites"
+        "yt-dlp",
+        "-x",
+        "--audio-format", "mp3",
+        "--audio-quality", "5",
+        "-o", output_path,
+        "--force-overwrites",
+        clean_url
     ]
     subprocess.run(cmd, check=True)
     return output_path
 
 def transcribe_audio_whisper_api(audio_path):
-    """Menggunakan OpenAI Whisper API (Hemat RAM Server)"""
     with open(audio_path, "rb") as audio_file:
         transcript = client.audio.transcriptions.create(
             model="whisper-1",
@@ -28,7 +41,6 @@ def transcribe_audio_whisper_api(audio_path):
     return transcript.segments
 
 def get_viral_timestamps(transcript_text):
-    """Minta AI mencari bagian klip terbaik"""
     prompt = f"""
     Berikut adalah transkrip video beserta timestamp:
     {transcript_text}
@@ -47,9 +59,9 @@ def get_viral_timestamps(transcript_text):
     return json.loads(response.choices[0].message.content)
 
 def crop_video_to_vertical(youtube_url, start_time, duration, output_filename):
-    """Memotong video menggunakan FFmpeg"""
-    cmd_url = f"yt-dlp -g -f 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]' {youtube_url}"
-    video_stream_url = subprocess.check_output(cmd_url, shell=True).decode('utf-8').strip().split('\n')[0]
+    clean_url = clean_youtube_url(youtube_url)
+    cmd_url = ["yt-dlp", "-g", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]", clean_url]
+    video_stream_url = subprocess.check_output(cmd_url).decode('utf-8').strip().split('\n')[0]
 
     ffmpeg_cmd = [
         "ffmpeg", "-y", "-ss", str(start_time),
@@ -62,8 +74,6 @@ def crop_video_to_vertical(youtube_url, start_time, duration, output_filename):
 
 def process_video_pipeline(youtube_url):
     audio_file = download_youtube_audio(youtube_url)
-    
-    # Transkripsi via API (Bukan Lokal)
     segments = transcribe_audio_whisper_api(audio_file)
     
     transcript_text = "".join([f"[{seg['start']:.1f}s - {seg['end']:.1f}s] {seg['text']}\n" for seg in segments])
